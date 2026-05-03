@@ -78,7 +78,7 @@ router.post('/login', async (req, res) => {
 
     const token = generateToken({ 
       userId: user.id, 
-      workspaceId: user.workspaceId, 
+      workspaceId: user.workspaceId || '', 
       role: user.role as any
     });
 

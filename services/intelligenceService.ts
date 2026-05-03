@@ -206,7 +206,7 @@ export class IntelligenceService {
         workspaceId: user.workspaceId!,
         url: report.url,
         seoAudit: report.seoAudit || {},
-        keywordsAnalysis: report.keywordsAnalysis || {},
+        keywords: report.keywordsAnalysis || {},
         contentAudit: report.contentAudit || {},
         paidStrategy: report.paidStrategy || {},
         strategicRisks: report.strategicRisks || {},
