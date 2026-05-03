@@ -12,7 +12,9 @@ export const workspaces = pgTable('workspaces', {
 export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   email: text('email').unique().notNull(),
-  passwordHash: text('password_hash').notNull(),
+  name: text('name'),
+  googleId: text('google_id').unique(),
+  passwordHash: text('password_hash'), // Nullable for OAuth users
   workspaceId: uuid('workspace_id').references(() => workspaces.id),
   role: text('role', { enum: ['admin', 'manager', 'viewer'] }).default('manager'),
   createdAt: timestamp('created_at').defaultNow(),

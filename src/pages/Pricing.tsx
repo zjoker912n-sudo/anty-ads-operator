@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { CheckCircle2, Shield, Zap, Globe, CreditCard, Bitcoin, ArrowRight, Target } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { CheckoutModal } from '../components/CheckoutModal';
 
 const PricingPage: React.FC = () => {
   const { login, user } = useAuth();
+  const navigate = useNavigate();
   const [selectedPlan, setSelectedPlan] = useState<any>(null);
 
   const plans = [
@@ -56,7 +58,7 @@ const PricingPage: React.FC = () => {
             <span className="text-lg font-black tracking-tighter">OPERATOR AI</span>
           </div>
           <button 
-            onClick={login}
+            onClick={() => navigate('/auth')}
             className="text-xs font-black uppercase tracking-widest bg-white text-black px-6 py-2.5 rounded-full hover:bg-gray-200 transition-all"
           >
             Login / Access Terminal
@@ -122,7 +124,7 @@ const PricingPage: React.FC = () => {
                 </ul>
 
                 <button 
-                  onClick={() => user ? setSelectedPlan(plan) : login()}
+                  onClick={() => user ? setSelectedPlan(plan) : navigate('/auth')}
                   className={`w-full py-5 rounded-2xl font-black transition-all active:scale-[0.98] flex items-center justify-center gap-3 ${
                     plan.popular 
                       ? 'bg-white text-blue-600 hover:bg-blue-50' 

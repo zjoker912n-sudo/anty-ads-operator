@@ -30,11 +30,9 @@ function AppRouter() {
   const router = useMemo(() => createBrowserRouter([
     {
       path: "/",
-      element: !user ? <LandingPage /> : <Layout />,
-      children: [
+      element: user ? <Layout /> : <LandingPage />,
+      children: user ? [
         { index: true, element: <Navigate to="/dashboard" replace /> },
-        { path: "auth", element: <AuthPage /> },
-        { path: "pricing", element: <PricingPage /> },
         { path: "dashboard", element: <Dashboard /> },
         { path: "admin", element: <Admin /> },
         { path: "ad-spy", element: <LiveAdSpy /> },
@@ -51,8 +49,10 @@ function AppRouter() {
         { path: "alerts", element: <Alerts /> },
         { path: "settings", element: <Settings /> },
         { path: "*", element: <PageUnderConstruction title="Module" /> },
-      ]
-    }
+      ] : []
+    },
+    { path: "/auth", element: <AuthPage /> },
+    { path: "/pricing", element: <PricingPage /> },
   ]), [user]);
 
   if (loading) {

@@ -15,6 +15,19 @@ export function AuthPage() {
   const { loginWithEmail, register } = useAuth();
   const navigate = useNavigate();
 
+  // Handle OAuth Redirect Token
+  React.useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    const userData = urlParams.get('user');
+
+    if (token && userData) {
+      localStorage.setItem('operator_token', token);
+      localStorage.setItem('operator_user', userData);
+      window.location.href = '/dashboard';
+    }
+  }, [navigate]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -32,6 +45,10 @@ export function AuthPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleGoogleLogin = () => {
+    window.location.href = '/api/auth/google';
   };
 
   return (
@@ -61,6 +78,22 @@ export function AuthPage() {
               {error}
             </div>
           )}
+
+          <div className="space-y-4 mb-8">
+            <button 
+              onClick={handleGoogleLogin}
+              className="w-full py-4 bg-white/[0.05] border border-white/10 text-white font-bold rounded-2xl hover:bg-white/10 transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
+            >
+              <img src="https://www.google.com/favicon.ico" alt="Google" className="w-4 h-4" />
+              Continue with Google
+            </button>
+            
+            <div className="flex items-center gap-4">
+              <div className="flex-1 h-px bg-white/5" />
+              <span className="text-[10px] font-black text-gray-600 uppercase tracking-widest">or secure email</span>
+              <div className="flex-1 h-px bg-white/5" />
+            </div>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-6">
             {!isLogin && (

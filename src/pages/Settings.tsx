@@ -23,7 +23,7 @@ export function Settings() {
 
   const fetchAccounts = async () => {
     try {
-      const response = await operatorApi.get('/meta/accounts');
+      const response = await operatorApi.get('/meta/ad-accounts');
       setAdAccounts(response.data);
     } catch (err) {
       console.error('Failed to fetch ad accounts');
@@ -32,16 +32,9 @@ export function Settings() {
     }
   };
 
-  const handleConnect = async (platform: string) => {
-    setConnecting(platform);
-    try {
-      const { data } = await operatorApi.get(`/meta/connect`);
-      window.open(data.url, 'oauth_popup', 'width=600,height=700');
-    } catch (error: any) {
-      alert('Connection failed: ' + error.message);
-    } finally {
-      setConnecting(null);
-    }
+  const handleConnect = () => {
+    // Redirect to backend OAuth initiator
+    window.location.href = '/api/meta/connect';
   };
 
   const handleSync = async (accountId: string) => {

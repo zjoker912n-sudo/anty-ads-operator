@@ -12,10 +12,12 @@ import {
   TrendingUp,
   Cpu
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 
 export default function LandingPage() {
   const { login } = useAuth();
+  const navigate = useNavigate();
 
   return (
     <div className="min-h-screen bg-[#030712] text-white font-sans selection:bg-blue-500/30">
@@ -39,7 +41,7 @@ export default function LandingPage() {
           <a href="#results" className="hover:text-white transition-colors">Success Metrics</a>
         </div>
         <button 
-          onClick={() => window.location.href = '/auth'}
+          onClick={() => navigate('/auth')}
           className="bg-white text-black px-6 py-2.5 rounded-full text-sm font-bold hover:bg-gray-200 transition-all active:scale-95 shadow-xl"
         >
           Login / Access Terminal
@@ -68,13 +70,13 @@ export default function LandingPage() {
           </p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <button 
-              onClick={() => window.location.href = '/pricing'}
+              onClick={() => navigate('/pricing')}
               className="w-full sm:w-auto bg-blue-600 px-10 py-5 rounded-2xl text-lg font-black hover:bg-blue-500 transition-all flex items-center justify-center gap-3 shadow-[0_20px_40px_rgba(37,99,235,0.3)] active:scale-[0.98]"
             >
               Start Free Performance Audit <ArrowRight className="w-5 h-5" />
             </button>
             <button 
-              onClick={() => window.location.href = '/auth'}
+              onClick={() => navigate('/auth')}
               className="w-full sm:w-auto border border-white/10 bg-white/5 backdrop-blur-md px-10 py-5 rounded-2xl text-lg font-black hover:bg-white/10 transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
             >
               Access Terminal
@@ -262,7 +264,7 @@ export default function LandingPage() {
                 ))}
               </ul>
               <button 
-                onClick={() => window.location.href = '/pricing'}
+                onClick={() => navigate('/auth')}
                 className="w-full py-5 rounded-2xl bg-white text-black font-black hover:bg-gray-200 transition-all active:scale-[0.98]"
               >
                 Start Monthly Plan
@@ -299,7 +301,7 @@ export default function LandingPage() {
                 ))}
               </ul>
               <button 
-                onClick={() => window.location.href = '/pricing'}
+                onClick={() => navigate('/auth')}
                 className="w-full py-5 rounded-2xl bg-white text-blue-600 font-black hover:bg-blue-50 transition-all active:scale-[0.98]"
               >
                 Claim Yearly Dominance
@@ -333,7 +335,7 @@ export default function LandingPage() {
             </div>
           </div>
           <button 
-            onClick={() => window.location.href = '/pricing'}
+            onClick={() => navigate('/auth')}
             className="bg-black text-white px-16 py-6 rounded-3xl text-2xl font-black hover:bg-gray-900 transition-all shadow-2xl active:scale-95 flex items-center justify-center gap-4 mx-auto"
           >
             Claim Dominance • Access Command <ArrowRight className="w-6 h-6" />
