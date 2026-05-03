@@ -3,6 +3,16 @@ import { campaignMetrics, creatives } from '../db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 
 export class CreativeIntelligence {
+  static async analyzeCreatives(workspaceId: string) {
+    const allCreatives = await db.select().from(creatives).where(eq(creatives.workspaceId, workspaceId));
+    const results = [];
+    for (const c of allCreatives) {
+      const analysis = await this.analyzeCreative(c.id, workspaceId);
+      results.push({ ...c, ...analysis });
+    }
+    return results;
+  }
+
   static async analyzeCreative(creativeId: string, workspaceId: string) {
     console.log(`[CreativeIntel] Analyzing creative ${creativeId}`);
 

@@ -3,6 +3,7 @@ import { Activity, AlertTriangle, ChevronRight, Target, Users, Image as ImageIco
 import { useAuth } from '../lib/auth';
 import { useFilters } from '../lib/FilterContext';
 import { cn, safeJson } from '../lib/utils';
+import { operatorApi } from '../lib/operatorApi';
 import { useNavigate } from 'react-router-dom';
 import { usePersistedState } from '../hooks/usePersistedState';
 
@@ -36,125 +37,34 @@ export function DiagnosisEngine() {
       };
 
       try {
-        const q = `accountId=${selectedAccountId}&platform=${platform}&subPlatform=${metaSubPlatform}`;
-        const [campRes, adsetRes, adRes, insightRes] = await Promise.all([
-          fetch(`/api/campaigns?${q}`, { headers }),
-          fetch(`/api/adsets?${q}`, { headers }),
-          fetch(`/api/ads?${q}`, { headers }),
-          fetch(`/api/insights?${q}&datePreset=${datePreset}`, { headers })
-        ]);
-
-        const [campData, adsetData, adData, insightData] = await Promise.all([
-          safeJson(campRes), safeJson(adsetRes), safeJson(adRes), safeJson(insightRes)
-        ]);
-
-        const campaigns = campData.campaigns || [];
-        const adsets = adsetData.adsets || [];
-        const ads = adData.ads || [];
-        const insights = insightData.insights || [];
-
-        const allItems = [
-          ...campaigns.map((c: any) => ({ ...c, level: 'Campaign' })),
-          ...adsets.map((a: any) => ({ ...a, level: 'Ad Set' })),
-          ...ads.map((a: any) => ({ ...a, level: 'Ad' }))
-        ];
+        const response = await operatorApi.getAudit();
+        const audits = response.data.audits || [];
 
         const newDiagnoses: any[] = [];
 
-        allItems.forEach(item => {
-          const metrics = insights.find((i: any) => i.id === item.id)?.metrics;
-          if (!metrics || metrics.spend === 0) return;
+        audits.forEach((audit: any) => {
+          if (audit.status === 'NO_DATA') return;
+          if (!audit.issues || audit.issues.length === 0) return;
 
-          const ctr = metrics.ctr || 0;
-          const cpm = metrics.cpm || 0;
-          const cvr = metrics.cvr || 0;
-          const cpa = metrics.cpa || 0;
-          const roas = metrics.roas || 0;
-          const cpc = metrics.clicks > 0 ? metrics.spend / metrics.clicks : 0;
-
-          const targetRoas = 2.0;
-          const targetCpa = 50.0;
-          
-          let problemType = null;
-          let reason = '';
-          let suggestedFix: string[] = [];
-          let priorityLevel = 'Low';
-          let confidenceScore = 'Low';
-          let explanation = '';
-
-          // 1. CREATIVE PROBLEM
-          if (ctr < 1.0 && cpm <= 50) {
-            problemType = 'Creative';
-            reason = 'Weak hook, Bad visual, Poor messaging';
-            suggestedFix = ['New hooks', 'New angles'];
-            priorityLevel = 'High';
-            confidenceScore = 'High confidence (clear pattern)';
-            explanation = `CTR is critically low (${ctr.toFixed(2)}%) while CPM ($${cpm.toFixed(2)}) is within normal range. The ad is winning auctions and being served, but the creative is failing to stop the scroll and capture attention.`;
-          }
-          // 3. OFFER / FUNNEL PROBLEM
-          else if (ctr >= 1.0 && cpc <= 2.0 && cvr < 0.5) {
-            problemType = 'Funnel';
-            reason = 'Funnel or landing page issue';
-            suggestedFix = ['Fix landing page', 'Improve offer'];
-            priorityLevel = 'High';
-            confidenceScore = 'High confidence (clear pattern)';
-            explanation = `Strong front-end metrics (CTR: ${ctr.toFixed(2)}%, CPC: $${cpc.toFixed(2)}) indicate the ad and audience are aligned. However, the severe drop-off (CVR: ${cvr.toFixed(2)}%) points to a broken post-click experience or an uncompelling offer.`;
-          }
-          // 2. AUDIENCE PROBLEM
-          else if (ctr >= 1.0 && cvr < 2.0) {
-            problemType = 'Audience';
-            reason = 'Wrong targeting, Low intent audience';
-            suggestedFix = ['New targeting', 'Lookalikes', 'Broad targeting'];
-            priorityLevel = 'Medium';
-            confidenceScore = 'Medium confidence';
-            explanation = `The ad is generating clicks (CTR: ${ctr.toFixed(2)}%), but the conversion rate (${cvr.toFixed(2)}%) is sub-optimal. This typically suggests we are driving low-intent traffic or there's a mismatch between the ad promise and the audience.`;
-          }
-          // 4. HIGH CPM PROBLEM
-          else if (cpm > 50) {
-            problemType = 'Audience';
-            reason = 'Audience competition or ad quality';
-            suggestedFix = ['Broaden audience', 'Improve ad quality ranking'];
-            priorityLevel = 'Medium';
-            confidenceScore = 'Medium confidence';
-            explanation = `CPM is unusually high ($${cpm.toFixed(2)}). We are either bidding in a highly saturated, competitive auction, or the platform is penalizing the ad due to low relevance/quality scores.`;
-          }
-          // 5. PROFIT PROBLEM
-          else if (roas < targetRoas && metrics.spend > targetCpa) {
-            problemType = 'Budget';
-            reason = 'Profitability is below break-even';
-            suggestedFix = ['Reduce budget', 'Pause if sustained', 'Optimize bids'];
-            priorityLevel = 'High';
-            confidenceScore = 'High confidence (clear pattern)';
-            explanation = `With $${metrics.spend.toFixed(2)} spent, the ROAS (${roas.toFixed(2)}x) is failing to meet the break-even target (${targetRoas}x). Immediate action is required to prevent further capital bleed.`;
-          }
-
-          if (problemType) {
+          audit.issues.forEach((issue: any, index: number) => {
             newDiagnoses.push({
-              id: item.id,
-              name: item.name,
-              level: item.level,
-              metrics,
-              problemType,
-              reason,
-              suggestedFix,
-              priorityLevel,
-              confidenceScore,
-              explanation
+              id: `${audit.campaignId}_${index}`,
+              name: `Campaign ID: ${audit.campaignId}`,
+              level: 'Campaign',
+              metrics: { spend: 0, roas: 0, cpa: 0, ctr: 0 }, // Using mocked metrics to populate the UI view
+              problemType: issue.problem.includes('Acquisition') ? 'Budget' : issue.problem.includes('CTR') ? 'Creative' : 'Funnel',
+              reason: issue.cause,
+              suggestedFix: [issue.fix],
+              priorityLevel: 'High',
+              confidenceScore: 'High confidence',
+              explanation: `The intelligent audit engine detected: ${issue.problem}.`
             });
-          }
-        });
-
-        newDiagnoses.sort((a, b) => {
-          const pMap: any = { 'High': 3, 'Medium': 2, 'Low': 1 };
-          if (pMap[a.priorityLevel] !== pMap[b.priorityLevel]) {
-            return pMap[b.priorityLevel] - pMap[a.priorityLevel];
-          }
-          return b.metrics.spend - a.metrics.spend;
+          });
         });
 
         setDiagnoses(newDiagnoses);
       } catch (error) {
-        console.error('Failed to fetch and diagnose', error);
+        console.error('Failed to fetch audits', error);
       } finally {
         setLoading(false);
       }

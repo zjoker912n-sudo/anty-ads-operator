@@ -3,6 +3,7 @@ import { CheckSquare, Calendar, Target, Play, CheckCircle2, Circle, Activity } f
 import { useAuth } from '../lib/auth';
 import { useFilters } from '../lib/FilterContext';
 import { cn, safeJson } from '../lib/utils';
+import { operatorApi } from '../lib/operatorApi';
 
 export function ExecutionEngine() {
   const { user } = useAuth();
@@ -32,69 +33,8 @@ export function ExecutionEngine() {
       };
 
       try {
-        const q = `accountId=${selectedAccountId}&platform=${platform}&subPlatform=${metaSubPlatform}`;
-        // Fetch campaigns and insights
-        const [campRes, insightRes] = await Promise.all([
-          fetch(`/api/campaigns?${q}`, { headers }),
-          fetch(`/api/insights?${q}&datePreset=${datePreset}`, { headers })
-        ]);
-
-        const [campData, insightData] = await Promise.all([
-          safeJson(campRes), safeJson(insightRes)
-        ]);
-
-        const campaigns = campData.campaigns || [];
-        const insights = insightData.insights || [];
-
-        // Combine data
-        const combinedData = campaigns.map((campaign: any) => {
-          const metrics = insights.find((i: any) => i.id === campaign.id)?.metrics || { spend: 0, roas: 0, cpa: 0, ctr: 0, cvr: 0, cpm: 0 };
-          return { ...campaign, metrics, type: 'campaign' };
-        }).filter((c: any) => c.metrics.spend > 0);
-
-        // Send to analysis engine
-        const analysisRes = await fetch('/api/analysis', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items: combinedData })
-        });
-        const analysisData = await safeJson(analysisRes);
-        const analyzedItems = analysisData.analyzedItems || [];
-
-        // Generate tasks based on analysis
-        const generatedTasks: any[] = [];
-        analyzedItems.forEach((item: any, index: number) => {
-          if (item.analysis.decision === 'SCALE') {
-            generatedTasks.push({
-              id: `task-scale-${item.id}`,
-              title: `Scale Campaign: ${item.name}`,
-              description: item.analysis.suggestedAction,
-              type: 'SCALE',
-              status: 'TODO',
-              priority: 'HIGH'
-            });
-          } else if (item.analysis.decision === 'KILL') {
-            generatedTasks.push({
-              id: `task-kill-${item.id}`,
-              title: `Pause Campaign: ${item.name}`,
-              description: item.analysis.suggestedAction,
-              type: 'KILL',
-              status: 'TODO',
-              priority: 'HIGH'
-            });
-          } else if (item.analysis.decision === 'OPTIMIZE') {
-            generatedTasks.push({
-              id: `task-opt-${item.id}`,
-              title: `Optimize Campaign: ${item.name}`,
-              description: item.analysis.suggestedAction,
-              type: 'OPTIMIZE',
-              status: 'TODO',
-              priority: 'MEDIUM'
-            });
-          }
-        });
-
-        setTasks(generatedTasks);
+        const response = await operatorApi.getSfkActions();
+        setTasks(response.data.actions || []);
       } catch (error) {
         console.error('Failed to fetch tasks', error);
       } finally {
@@ -121,36 +61,7 @@ export function ExecutionEngine() {
 
   const executeTask = async (task: any) => {
     try {
-      const token = getToken();
-      const itemId = task.id.split('-').pop(); // Get original ID from task ID
-      const updatePayload: any = { campaignId: itemId, platform };
-      
-      if (task.type === 'SCALE') {
-        // We don't have the original item budget here easily, so we scale by a fixed amount or fetch
-        // For simplicity, let's assume the user wants it done. In a real app we'd pass the budget.
-        // The backend already handles null budget by not updating it.
-        // But if we want to scale, we need a value.
-        // Let's assume $100 if we don't know. 
-        // Better: the task description might have context, but code doesn't parse it.
-        // We'll try to find the item from the local state if possible.
-        // Actually, we'll just send 1.2 budget if we can find it.
-        updatePayload.dailyBudget = 100; // placeholder if unknown
-      } else if (task.type === 'KILL') {
-        updatePayload.status = 'PAUSED';
-      }
-
-      const res = await fetch('/api/campaigns/update', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'x-user-id': user!.uid,
-          [`x-${platform}-token`]: token || ''
-        },
-        body: JSON.stringify(updatePayload)
-      });
-
-      const data = await safeJson(res);
-      if (data.error) throw new Error(data.error);
+      await operatorApi.executeSfkAction(task.id);
 
       // 1. Mark task as done
       setTasks(tasks.map(t => t.id === task.id ? { ...t, status: 'DONE' } : t));

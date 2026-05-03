@@ -14,7 +14,9 @@ export const REDIS_URL = sanitizeRedisUrl(rawRedisUrl);
 
 export const REDIS_OPTIONS: any = {
   maxRetriesPerRequest: null,
-  lazyConnect: true
+  lazyConnect: true,
+  retryStrategy: () => null, // Don't retry — fail fast locally; cloud Redis stays persistent
+  enableOfflineQueue: false
 };
 
 // Upstash/Managed Redis usually require TLS

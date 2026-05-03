@@ -1,8 +1,49 @@
-import { Campaign, CampaignMetrics } from '../models';
-import { MetaSyncService } from './metaSyncService';
+import { db } from '../db/index';
+import { campaigns, campaignMetrics } from '../db/schema';
+import { eq, desc } from 'drizzle-orm';
 
 export class ExecutionService {
-  static async evaluateAndExecute(campaign: Campaign, metrics: CampaignMetrics) {
+  static async evaluateSfkConditions(workspaceId: string) {
+    console.log(`[SFK] Evaluating for workspace: ${workspaceId}`);
+    
+    const activeCampaigns = await db.select()
+      .from(campaigns)
+      .where(eq(campaigns.workspaceId, workspaceId));
+
+    const actions = [];
+
+    for (const c of activeCampaigns) {
+      const [latest] = await db.select()
+        .from(campaignMetrics)
+        .where(eq(campaignMetrics.campaignId, c.id))
+        .orderBy(desc(campaignMetrics.date))
+        .limit(1);
+
+      if (latest) {
+        const evalResult = await this.evaluateAndExecute(c as any, latest as any);
+        if (evalResult.action) {
+          actions.push({
+            id: `action_${c.id}_${Date.now()}`,
+            campaignId: c.id,
+            title: `${evalResult.action === 'SCALE' ? 'Scale' : evalResult.action === 'KILL' ? 'Pause' : 'Optimize'} Campaign: ${c.name}`,
+            description: evalResult.reason,
+            type: evalResult.action,
+            status: 'TODO',
+            priority: evalResult.action === 'KILL' ? 'HIGH' : 'MEDIUM'
+          });
+        }
+      }
+    }
+    return actions;
+  }
+
+  static async executeAction(actionId: string, workspaceId: string) {
+    console.log(`[SFK] Executing action ${actionId} for workspace ${workspaceId}`);
+    // In a real system, you would call Meta API and update the DB here.
+    return { success: true, actionId, timestamp: new Date().toISOString() };
+  }
+
+  static async evaluateAndExecute(campaign: any, metrics: any) {
     const { roas, ctr, cpa } = metrics;
     let action = '';
     let reason = '';

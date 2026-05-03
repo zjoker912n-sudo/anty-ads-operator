@@ -4,6 +4,7 @@ import { useAuth } from '../lib/auth';
 import { useFilters } from '../lib/FilterContext';
 import ReactMarkdown from 'react-markdown';
 import { cn, safeJson } from '../lib/utils';
+import { operatorApi } from '../lib/operatorApi';
 import { useAiSettings } from '../hooks/useAiSettings';
 import { usePersistedState } from '../hooks/usePersistedState';
 
@@ -39,89 +40,8 @@ export function TestingEngine() {
     };
 
     try {
-      const q = `accountId=${selectedAccountId}&platform=${platform}&subPlatform=${metaSubPlatform}`;
-      const [campRes, adsetRes, adRes, insightRes] = await Promise.all([
-        fetch(`/api/campaigns?${q}`, { headers }),
-        fetch(`/api/adsets?${q}`, { headers }),
-        fetch(`/api/ads?${q}`, { headers }),
-        fetch(`/api/insights?${q}&datePreset=${datePreset}`, { headers })
-      ]);
-
-      const [campData, adsetData, adData, insightData] = await Promise.all([
-        safeJson(campRes), safeJson(adsetRes), safeJson(adRes), safeJson(insightRes)
-      ]);
-
-      const campaigns = campData.campaigns || [];
-      const adsets = adsetData.adsets || [];
-      const ads = adData.ads || [];
-      const insights = insightData.insights || [];
-
-      const detectedTests: any[] = [];
-
-      // Detect Audience Tests (Campaigns with multiple Adsets)
-      campaigns.forEach((campaign: any) => {
-        const campaignAdsets = adsets.filter((a: any) => a.campaignId === campaign.id);
-        if (campaignAdsets.length > 1) {
-          const variants = campaignAdsets.map((adset: any) => {
-            const metrics = insights.find((i: any) => i.id === adset.id)?.metrics || { spend: 0, roas: 0, cpa: 0, ctr: 0 };
-            return { id: adset.id, name: adset.name, metrics };
-          }).filter((v: any) => v.metrics.spend > 0);
-
-          if (variants.length > 1) {
-            const winner = variants.reduce((prev: any, current: any) => {
-              // Primary metric: ROAS, secondary: CPA (lower is better if > 0)
-              if (prev.metrics.roas !== current.metrics.roas) {
-                return prev.metrics.roas > current.metrics.roas ? prev : current;
-              }
-              if (prev.metrics.cpa > 0 && current.metrics.cpa > 0) {
-                return prev.metrics.cpa < current.metrics.cpa ? prev : current;
-              }
-              return prev.metrics.ctr > current.metrics.ctr ? prev : current;
-            });
-
-            detectedTests.push({
-              id: `test-aud-${campaign.id}`,
-              type: 'Audience Test',
-              name: `Audience Test in: ${campaign.name}`,
-              variants,
-              winner: winner.id
-            });
-          }
-        }
-      });
-
-      // Detect Creative Tests (Adsets with multiple Ads)
-      adsets.forEach((adset: any) => {
-        const adsetAds = ads.filter((a: any) => a.adsetId === adset.id);
-        if (adsetAds.length > 1) {
-          const variants = adsetAds.map((ad: any) => {
-            const metrics = insights.find((i: any) => i.id === ad.id)?.metrics || { spend: 0, roas: 0, cpa: 0, ctr: 0 };
-            return { id: ad.id, name: ad.name, metrics };
-          }).filter((v: any) => v.metrics.spend > 0);
-
-          if (variants.length > 1) {
-            const winner = variants.reduce((prev: any, current: any) => {
-              if (prev.metrics.roas !== current.metrics.roas) {
-                return prev.metrics.roas > current.metrics.roas ? prev : current;
-              }
-              if (prev.metrics.cpa > 0 && current.metrics.cpa > 0) {
-                return prev.metrics.cpa < current.metrics.cpa ? prev : current;
-              }
-              return prev.metrics.ctr > current.metrics.ctr ? prev : current;
-            });
-
-            detectedTests.push({
-              id: `test-cre-${adset.id}`,
-              type: 'Creative/Hook Test',
-              name: `Creative Test in: ${adset.name}`,
-              variants,
-              winner: winner.id
-            });
-          }
-        }
-      });
-
-      setTests(detectedTests);
+      const response = await operatorApi.getTests();
+      setTests(response.data.tests || []);
     } catch (err) {
       console.error('Error fetching data:', err);
     } finally {

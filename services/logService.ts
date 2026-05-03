@@ -1,5 +1,6 @@
 import { db } from '../db/index';
 import { optimizationLogs } from '../db/schema';
+import { eq, and, desc } from 'drizzle-orm';
 
 export class LogService {
   static async logAction(data: {
@@ -27,8 +28,13 @@ export class LogService {
   }
 
   static async getLogs(workspaceId: string, campaignId?: string) {
-    // In a real app, you'd use drizzle's query builder
-    // For now, this is a conceptual implementation of the retrieval
-    return [];
+    let query = db.select().from(optimizationLogs).where(
+      campaignId 
+        ? and(eq(optimizationLogs.workspaceId, workspaceId), eq(optimizationLogs.campaignId, campaignId))
+        : eq(optimizationLogs.workspaceId, workspaceId)
+    ).orderBy(desc(optimizationLogs.timestamp));
+
+    const results = await query;
+    return results;
   }
 }

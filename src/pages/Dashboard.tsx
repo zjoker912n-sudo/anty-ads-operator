@@ -21,7 +21,7 @@ export function Dashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      const response = await operatorApi.get('/performance/dashboard');
+      const response = await operatorApi.getPerformance();
       setData(response.data);
     } catch (err) {
       console.error('Failed to fetch dashboard data');

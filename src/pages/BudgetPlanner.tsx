@@ -1,12 +1,30 @@
-import React, { useState } from 'react';
-import { Calculator, TrendingUp, Target, DollarSign, Calendar } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Calculator, TrendingUp, Target, DollarSign, Calendar, ArrowRight } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { operatorApi } from '../lib/operatorApi';
 
 export function BudgetPlanner() {
   const [budget, setBudget] = useState(10000);
   const [targetRoas, setTargetRoas] = useState(2.5);
   const [cpc, setCpc] = useState(0.85);
   const [cvr, setCvr] = useState(2.0);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const fetchBudgetPlan = async () => {
+      setLoading(true);
+      try {
+        const response = await operatorApi.getBudgetPlan();
+        setSuggestions(response.data.suggestions || []);
+      } catch (error) {
+        console.error('Failed to fetch budget plan', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchBudgetPlan();
+  }, []);
 
   const estimatedClicks = budget / cpc;
   const estimatedConversions = (estimatedClicks * cvr) / 100;
@@ -111,12 +129,39 @@ export function BudgetPlanner() {
           <div className="glass-panel p-8 rounded-2xl relative overflow-hidden group">
             <div className="absolute inset-0 bg-gradient-to-br from-brand-accent/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
             <div className="relative z-10">
-              <h2 className="text-xl font-bold text-white mb-4">AI Recommendation</h2>
-              <p className="text-gray-400 leading-relaxed">
-                Based on your target ROAS of <span className="text-white font-bold">{targetRoas}x</span>, we recommend focusing on <span className="text-blue-400 font-bold">Retargeting Audiences</span> to stabilize your CVR. 
-                If your CPC exceeds <span className="text-red-400 font-bold">${(cpc * 1.2).toFixed(2)}</span>, your ROAS will likely drop below your target. 
-                Consider diversifying into <span className="text-indigo-400 font-bold">TikTok Ads</span> if Meta CPCs continue to rise.
-              </p>
+              <h2 className="text-xl font-bold text-white mb-4">AI Budget Orchestration</h2>
+              {loading ? (
+                <p className="text-gray-400">Analyzing optimal budget distribution...</p>
+              ) : suggestions.length === 0 ? (
+                <p className="text-gray-400 leading-relaxed">
+                  Based on your target ROAS of <span className="text-white font-bold">{targetRoas}x</span>, we recommend focusing on <span className="text-blue-400 font-bold">Retargeting Audiences</span> to stabilize your CVR. 
+                  If your CPC exceeds <span className="text-red-400 font-bold">${(cpc * 1.2).toFixed(2)}</span>, your ROAS will likely drop below your target. 
+                  Consider diversifying into <span className="text-indigo-400 font-bold">TikTok Ads</span> if Meta CPCs continue to rise.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {suggestions.map((suggestion, idx) => (
+                    <div key={idx} className="flex items-center justify-between bg-white/5 border border-white/10 p-4 rounded-xl">
+                      <div>
+                        <h3 className="text-sm font-bold text-white mb-1">{suggestion.campaignName}</h3>
+                        <p className="text-xs text-gray-400">{suggestion.reason}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={cn(
+                          "px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider border",
+                          suggestion.action === 'INCREASE' ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"
+                        )}>
+                          {suggestion.action} {suggestion.action === 'INCREASE' ? '+' : '-'}${suggestion.amount}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  <button className="w-full mt-4 bg-brand-accent text-white px-4 py-2.5 rounded-xl font-medium shadow-[0_0_15px_rgba(37,99,235,0.3)] hover:bg-brand-accent/90 transition-colors flex items-center justify-center gap-2">
+                    Execute Reallocation
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

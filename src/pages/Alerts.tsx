@@ -3,6 +3,7 @@ import { Bell, AlertTriangle, Info, CheckCircle, Activity, ChevronDown, ChevronU
 import { useAuth } from '../lib/auth';
 import { useFilters } from '../lib/FilterContext';
 import { cn, safeJson } from '../lib/utils';
+import { operatorApi } from '../lib/operatorApi';
 
 interface Alert {
   id: string;
@@ -50,100 +51,22 @@ export function Alerts() {
       [`x-${platform}-token`]: token
     };
 
-    try {
-      const [campRes, insightRes] = await Promise.all([
-        fetch(`/api/campaigns?accountId=${selectedAccountId}&platform=${platform}`, { headers }),
-        fetch(`/api/insights?accountId=${selectedAccountId}&platform=${platform}&datePreset=${datePreset}`, { headers })
-      ]);
+      try {
+        const response = await operatorApi.getAlerts();
+        const generatedAlerts = response.data.map((alert: any) => ({
+          id: alert.id,
+          type: alert.type || 'warning',
+          campaignId: alert.campaignId || 'Unknown',
+          campaignName: alert.campaignName || 'Unknown Campaign',
+          problem: alert.title || 'System Alert',
+          cause: alert.message || 'No description provided.',
+          suggestedFix: alert.suggestedFix || 'Review campaign performance.',
+          icon: alert.type === 'critical' ? AlertOctagon : alert.type === 'warning' ? TrendingDown : Info,
+          metrics: alert.metrics || { spend: 0, cpa: 0, ctr: 0, roas: 0 }
+        }));
 
-      const [campData, insightData] = await Promise.all([
-        safeJson(campRes), safeJson(insightRes)
-      ]);
-
-      if (campData.error) throw new Error(campData.error);
-      if (insightData.error) throw new Error(insightData.error);
-
-      const campaigns = campData.campaigns || [];
-      const insights = insightData.insights || [];
-      const itemsToAnalyze = campaigns.map((camp: any) => {
-        const insight = insights.find((i: any) => i.id === camp.id);
-        const rawMetrics = insight?.metrics || { spend: 0, impressions: 0, clicks: 0, conversions: 0, conversionValue: 0 };
-        
-        const spend = rawMetrics.spend;
-        const ctr = rawMetrics.impressions > 0 ? (rawMetrics.clicks / rawMetrics.impressions) * 100 : 0;
-        const cpa = rawMetrics.conversions > 0 ? spend / rawMetrics.conversions : 0;
-        const roas = spend > 0 ? rawMetrics.conversionValue / spend : 0;
-        const cvr = rawMetrics.clicks > 0 ? (rawMetrics.conversions / rawMetrics.clicks) * 100 : 0;
-
-        return {
-          ...camp,
-          type: 'campaign',
-          metrics: { ...rawMetrics, ctr, cpa, roas, cvr }
-        };
-      });
-
-      const analysisRes = await fetch('/api/analysis', {
-        method: 'POST',
-        headers: { ...headers, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: itemsToAnalyze })
-      });
-      const analysisData = await analysisRes.json();
-      
-      if (analysisData.error) throw new Error(analysisData.error);
-
-      const generatedAlerts: Alert[] = [];
-
-      analysisData.analyzedItems.forEach((item: any) => {
-        const metrics = item.metrics;
-        
-        if (item.analysis?.decision === 'KILL') {
-          generatedAlerts.push({
-            id: `kill-${item.id}`,
-            type: 'critical',
-            campaignId: item.id,
-            campaignName: item.name,
-            problem: 'Critical Performance Issue',
-            cause: item.analysis.problems.join(', ') || 'Extremely poor performance detected.',
-            suggestedFix: item.analysis.suggestedAction,
-            icon: AlertOctagon,
-            metrics
-          });
-        } else if (item.analysis?.problems?.length > 0) {
-          generatedAlerts.push({
-            id: `warn-${item.id}`,
-            type: 'warning',
-            campaignId: item.id,
-            campaignName: item.name,
-            problem: item.analysis.problems[0],
-            cause: `The campaign is experiencing: ${item.analysis.problems.join(', ')}`,
-            suggestedFix: item.analysis.suggestedAction,
-            icon: TrendingDown,
-            metrics
-          });
-        }
-
-        // Campaign stopped
-        if (item.status === 'PAUSED' || item.status === 'ARCHIVED' || item.status === 'OFF') {
-          generatedAlerts.push({
-            id: `stopped-${item.id}`,
-            type: 'info',
-            campaignId: item.id,
-            campaignName: item.name,
-            problem: 'Campaign Stopped',
-            cause: 'Campaign was paused manually, ended its schedule, or was stopped by an automated rule.',
-            suggestedFix: 'Review final campaign performance to document learnings before permanently archiving, or reactivate if paused by mistake.',
-            icon: PauseCircle,
-            metrics
-          });
-        }
-      });
-
-      // Sort alerts: Critical first, then Warning, then Info
-      const severityOrder = { critical: 0, warning: 1, info: 2 };
-      generatedAlerts.sort((a, b) => severityOrder[a.type] - severityOrder[b.type]);
-
-      setAlerts(generatedAlerts);
-    } catch (err: any) {
+        setAlerts(generatedAlerts);
+      } catch (err: any) {
       console.error('Error fetching alerts:', err);
       setError(err.message || 'Failed to fetch alerts');
     } finally {

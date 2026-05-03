@@ -27,14 +27,17 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
  * If workspaceId is provided in the body or query, it must match the user's workspaceId.
  */
 export const scopeWorkspace = (req: AuthRequest, res: Response, next: NextFunction) => {
-  const workspaceId = req.body.workspaceId || req.query.workspaceId || req.params.workspaceId;
+  // Safely read body — may be undefined on GET requests
+  const body = req.body || {};
+  const workspaceId = body.workspaceId || req.query.workspaceId || req.params.workspaceId;
   
   if (workspaceId && workspaceId !== req.user?.workspaceId) {
     return res.status(403).json({ error: 'Forbidden: Access to this workspace is denied' });
   }
 
-  // Inject workspaceId into request if not present
-  if (!workspaceId) {
+  // Inject workspaceId into request body if not present
+  if (!req.body) req.body = {};
+  if (!req.body.workspaceId) {
     req.body.workspaceId = req.user?.workspaceId;
   }
 

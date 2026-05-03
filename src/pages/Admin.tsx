@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Shield, Users, Activity, Globe, Database, Lock, AlertTriangle, CheckCircle2, Server, Terminal, Zap } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { motion } from 'framer-motion';
+import { operatorApi } from '../lib/operatorApi';
 
 interface SystemMetric {
   label: string;
@@ -14,16 +15,27 @@ export function Admin() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'infrastructure'>('overview');
 
+  const [stats, setStats] = useState<any>(null);
+
   useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 800);
-    return () => clearTimeout(timer);
+    const fetchStats = async () => {
+      try {
+        const response = await operatorApi.getAdminStats();
+        setStats(response.data);
+      } catch (err) {
+        console.error('Error fetching admin stats', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchStats();
   }, []);
 
   const systemMetrics: SystemMetric[] = [
-    { label: 'Active Sessions', value: '1,248', status: 'healthy', icon: Users },
-    { label: 'API Requests/min', value: '45.2k', status: 'healthy', icon: Activity },
-    { label: 'Database Health', value: '99.99%', status: 'healthy', icon: Database },
-    { label: 'Auth Handshakes', value: '428', status: 'healthy', icon: Lock },
+    { label: 'Active Users', value: stats?.users || '0', status: 'healthy', icon: Users },
+    { label: 'Workspaces', value: stats?.workspaces || '0', status: 'healthy', icon: Globe },
+    { label: 'Optimization Logs', value: stats?.logs || '0', status: 'healthy', icon: Database },
+    { label: 'Background Jobs (Active/Waiting)', value: `${stats?.queue?.active || 0} / ${stats?.queue?.waiting || 0}`, status: stats?.queue?.failed > 0 ? 'warning' : 'healthy', icon: Activity },
   ];
 
   if (loading) {
