@@ -2,7 +2,6 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import './queue/worker.ts';
 import { startMetaSyncScheduler } from './scheduler/metaSync.ts';
 
 // Routes
@@ -66,7 +65,11 @@ app.use('/api/logs', logsRouter);
 app.use('/api/admin', adminRouter);
 
 // Start Background Processes
-startMetaSyncScheduler();
+try {
+  startMetaSyncScheduler();
+} catch (e: any) {
+  console.warn('[Server] Scheduler start skipped:', e.message);
+}
 
 app.listen(PORT, () => {
   console.log(`[Server] 🚀 Operator AI running on port ${PORT}`);
