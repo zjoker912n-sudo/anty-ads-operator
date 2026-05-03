@@ -65,6 +65,12 @@ export const operatorApi = {
 
   // Direct AI Calls (Fallback/Manual)
   runAIAnalysis: (prompt: string, model?: string) => api.post('/intelligence/advanced-analysis', { prompt, model }),
+  
+  // Raw API
+  get: api.get,
+  post: api.post,
+  put: api.put,
+  delete: api.delete,
 };
 
 export default operatorApi;

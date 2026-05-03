@@ -645,9 +645,6 @@ function OverviewTab({ report }: { report: IntelligenceReport }) {
                     stroke="#6366f1"
                     fill="#6366f1"
                     fillOpacity={0.2}
-                    data={[
-                      { A: 60 }, { A: 60 }, { A: 60 }, { A: 60 }, { A: 60 }
-                    ]}
                   />
                 </RadarChart>
               </ResponsiveContainer>
