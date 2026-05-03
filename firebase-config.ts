@@ -36,19 +36,28 @@ export const db = initializeFirestore(app, {
 
 export const auth = getAuth(app);
 
-// Admin SDK Initialization
-const adminApp = admin.apps.length === 0 
-  ? admin.initializeApp({
-      credential: admin.credential.applicationDefault(),
-      projectId: configProjectId,
-    })
-  : admin.apps[0]!;
+// Admin SDK Initialization - optional, won't crash if credentials not available
+let adminApp: admin.app.App | null = null;
+let adminDb: any = null;
 
-// Get Firestore instance using the standard getAdminFirestore utility
-const effectiveDatabaseId = (configDatabaseId && configDatabaseId !== '(default)') ? configDatabaseId : undefined;
+try {
+  adminApp = admin.apps.length === 0
+    ? admin.initializeApp({
+        credential: admin.credential.applicationDefault(),
+        projectId: configProjectId,
+      })
+    : admin.apps[0]!;
 
-export const adminDb = effectiveDatabaseId 
-  ? getAdminFirestore(adminApp, effectiveDatabaseId)
-  : getAdminFirestore(adminApp);
+  const effectiveDatabaseId = (configDatabaseId && configDatabaseId !== '(default)') ? configDatabaseId : undefined;
 
-console.log(`[Firebase] ✅ Admin SDK authorized for project: ${configProjectId} (Database: ${effectiveDatabaseId || 'default'})`);
+  adminDb = effectiveDatabaseId
+    ? getAdminFirestore(adminApp, effectiveDatabaseId)
+    : getAdminFirestore(adminApp);
+
+  console.log(`[Firebase] ✅ Admin SDK authorized for project: ${configProjectId} (Database: ${effectiveDatabaseId || 'default'})`);
+} catch (err: any) {
+  console.warn(`[Firebase] ⚠️ Admin SDK not initialized (no credentials): ${err.message}`);
+}
+
+export { adminDb };
+
