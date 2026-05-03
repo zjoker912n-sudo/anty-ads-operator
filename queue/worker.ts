@@ -25,6 +25,15 @@ if (isRedisAvailable) {
           return await analyzeCampaignProcessor(job.data);
         case 'url_analysis':
           return await urlAnalysisProcessor(job.data);
+        case 'smart_alerts_scan':
+          // @ts-ignore
+          return await import('../services/alertScanner.ts').then(s => s.AlertScanner.scanForAnomalies(workspace_id));
+        case 'funnel_analysis':
+          // @ts-ignore
+          return await import('../services/funnelService.ts').then(s => s.FunnelService.syncGA4Data(workspace_id, job.data.propertyId));
+        case 'creative_analysis':
+          // @ts-ignore
+          return await import('../services/creativeIntelligence.ts').then(s => s.CreativeIntelligence.analyzeCreative(job.data.creativeId, workspace_id));
         default:
           throw new Error(`Job type "${job.name}" is not recognized by this worker`);
       }

@@ -1,5 +1,7 @@
 import { ScraperService } from './scraper.ts';
-import { adminDb } from '../firebase-config.ts';
+import { db } from '../db/index';
+import { marketIntel, users } from '../db/schema';
+import { eq } from 'drizzle-orm';
 import { AdSpyEngine } from '../intel/adSpy.ts';
 import axios from 'axios';
 import { GoogleGenAI } from '@google/genai';
@@ -82,7 +84,6 @@ export class IntelligenceService {
   async collaborativeAnalyze(prompt: string): Promise<string> {
     console.log('[Intelligence] 🤝 Starting Collaborative Intelligence...');
     
-    // 1. Get Experts' opinions (Parallel) - ONLY if keys exist and are valid
     const expertCalls: Promise<string>[] = [];
     
     const hasOpenAI = process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.includes('TODO');
@@ -101,8 +102,8 @@ export class IntelligenceService {
       experts = await Promise.allSettled(expertCalls);
     }
 
-    const logicExpert = hasOpenAI && experts[0]?.status === 'fulfilled' ? experts[0].value : 'Logic expertise unavailable (Key or Quota issue).';
-    const strategyExpert = hasAnthropic && experts[1]?.status === 'fulfilled' ? experts[1].value : 'Strategic expertise unavailable (Key or Quota issue).';
+    const logicExpert = hasOpenAI && experts[0]?.status === 'fulfilled' ? experts[0].value : 'Logic expertise unavailable.';
+    const strategyExpert = hasAnthropic && experts[1]?.status === 'fulfilled' ? experts[1].value : 'Strategic expertise unavailable.';
 
     // 2. Aggregate with Gemini (The Master Engine)
     const finalPrompt = `
@@ -133,7 +134,7 @@ export class IntelligenceService {
 
       if (modelType === 'openai') {
         const key = process.env.OPENAI_API_KEY;
-        if (!key || key.includes('TODO')) throw new Error('OPENAI_API_KEY is missing or not configured.');
+        if (!key || key.includes('TODO')) throw new Error('OPENAI_API_KEY is missing.');
         const openai = new OpenAI({ apiKey: key.trim().replace(/^["']|["']$/g, '') });
         const response = await openai.chat.completions.create({
           model: "gpt-4o",
@@ -145,7 +146,7 @@ export class IntelligenceService {
       
       if (modelType === 'anthropic') {
         const key = process.env.ANTHROPIC_API_KEY;
-        if (!key || key.includes('TODO')) throw new Error('ANTHROPIC_API_KEY is missing or not configured.');
+        if (!key || key.includes('TODO')) throw new Error('ANTHROPIC_API_KEY is missing.');
         const anthropic = new Anthropic({ apiKey: key.trim().replace(/^["']|["']$/g, '') });
         const response = await anthropic.messages.create({
           model: "claude-3-5-sonnet-latest",
@@ -155,21 +156,10 @@ export class IntelligenceService {
         return (response.content[0] as any).text || '';
       }
 
-      // Default to Gemini
-      let key = process.env.GEMINI_API_KEY;
+      let key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+      if (!key || key.includes('TODO')) throw new Error('GEMINI_API_KEY is missing.');
       
-      if (!key || key === 'TODO' || key.includes('YOUR_API_KEY')) {
-         key = process.env.GOOGLE_API_KEY || key;
-      }
-
-      if (!key || key === 'TODO' || key.includes('YOUR_API_KEY')) {
-        throw new Error('GEMINI_API_KEY is missing or invalid. Go to Settings > Secrets to add it.');
-      }
-      
-      const sanitizedKey = key.trim().replace(/^["']|["']$/g, '');
-      
-      const genAI = new GoogleGenAI({ apiKey: sanitizedKey });
-      
+      const genAI = new GoogleGenAI({ apiKey: key.trim().replace(/^["']|["']$/g, '') });
       const response = await genAI.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
@@ -182,95 +172,54 @@ export class IntelligenceService {
 
     } catch (error: any) {
       console.error(`[Intelligence] AI analysis failed (${modelType}):`, error.message);
-      
-      const errMsg = error.message?.toLowerCase() || '';
-      
-      // Better user-facing error messages
-      if (errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('too many requests')) {
-        throw new Error(`${modelType.toUpperCase()} Quota exceeded. AI limit reached. Please wait a few minutes or upgrade your plan.`);
-      }
-      if (errMsg.includes('400') || errMsg.includes('api key not valid') || errMsg.includes('invalid_argument')) {
-        throw new Error(`${modelType.toUpperCase()} API key is invalid or unauthorized. Please check Settings > Secrets.`);
-      }
-      if (errMsg.includes('401') || errMsg.includes('unauthorized')) {
-        throw new Error(`${modelType.toUpperCase()} Authentication failed. Is the API key correct?`);
-      }
-      if (errMsg.includes('credit balance is too low')) {
-        throw new Error(`${modelType.toUpperCase()} balance is too low. Please add credits to your AI provider account.`);
-      }
-      
-      throw new Error(`AI Analysis Error (${modelType.toUpperCase()}): ${error.message}`);
+      throw error;
     }
   }
 
   /**
    * Coordinates the full diagnostic
    */
-  async fullAudit(url: string, userId: string, preferredModel: any = 'gemini'): Promise<any> {
-    console.log(`[Intelligence] 🔍 Starting Full Audit for: ${url} using ${preferredModel}`);
-    
-    // 1. Scrape content
+  async fullAudit(url: string, userId: string): Promise<any> {
+    console.log(`[Intelligence] 🔍 Starting Full Audit for: ${url}`);
     const scrapeResult = await this.scraper.scrape(url, { screenshot: false });
-    
-    // 2. Fetch SEMrush data
     const semrushData = await this.fetchSemrushData(url);
     
-    // 3. Prepare contextual data for AI
-    const dataContext = {
+    return {
       url,
-      scrapeContent: scrapeResult.content?.substring(0, 5000), // Protect context length
+      scrapeContent: scrapeResult.content?.substring(0, 5000),
       semrush: semrushData,
       timestamp: new Date().toISOString()
     };
-
-    // 4. In a real app, we'd inject the specialized prompts here
-    // For this demonstration, we'll return the prepared data
-    // and the frontend will decide whether to call the AI directly or via backend
-    
-    return dataContext;
   }
 
   /**
    * Saves a completed report from the frontend
    */
   async saveCompletedReport(userId: string, report: any): Promise<any> {
-    const domain = report.url ? new URL(report.url).hostname : 'unknown';
-    
-    let savedId = null;
+    try {
+      // 1. Get user to find workspaceId
+      const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+      if (!user) throw new Error('User not found');
 
-    try {
-      // 1. Persistence to User's private collection
-      const userDoc = await adminDb.collection('users').doc(userId).collection('intelligence_reports').add({
-        ...report,
-        createdAt: new Date(),
-        userId
-      });
-      savedId = userDoc.id;
-      console.log(`[Intelligence] ✅ Saved report ${savedId} for user ${userId}`);
-    } catch (err: any) {
-      console.error(`[Intelligence] ❌ Failed to save to user collection:`, err.message);
-      // If we can't even save to user collection, we might want to throw if savedId is null
-    }
-    
-    try {
-      // 2. Also keep global record for system intelligence
-      await adminDb.collection('system_intel').doc('market').collection('reports').add({
-        ...report,
-        userId,
-        domain,
+      // 2. Insert into market_intel
+      const [inserted] = await db.insert(marketIntel).values({
+        workspaceId: user.workspaceId!,
         url: report.url,
+        seoAudit: report.seoAudit || {},
+        keywordsAnalysis: report.keywordsAnalysis || {},
+        contentAudit: report.contentAudit || {},
+        paidStrategy: report.paidStrategy || {},
+        strategicRisks: report.strategicRisks || {},
+        marketRivals: report.marketRivals || {},
+        growthRoadmap: report.growthRoadmap || {},
         createdAt: new Date()
-      });
-      console.log(`[Intelligence] ✅ Saved report to system_intel`);
+      }).returning();
+
+      console.log(`[Intelligence] ✅ Saved report ${inserted.id} for user ${userId}`);
+      return inserted;
     } catch (err: any) {
-      console.warn(`[Intelligence] ⚠️ Failed to save to system_intel:`, err.message);
-      // Non-critical failure
+      console.error(`[Intelligence] ❌ Failed to save report:`, err.message);
+      throw err;
     }
-
-    if (!savedId) {
-      throw new Error('Failed to save intelligence report to database.');
-    }
-
-    return { id: savedId };
   }
 }

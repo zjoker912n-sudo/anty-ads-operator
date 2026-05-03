@@ -4,10 +4,13 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db, handleFirestoreError } from './firebase';
 
 interface AuthContextType {
-  user: User | null;
+  user: any | null;
   loading: boolean;
   login: () => Promise<void>;
   logout: () => Promise<void>;
+  loginWithEmail: (email: string, password: string) => Promise<void>;
+  register: (email: string, password: string, workspaceName: string) => Promise<void>;
+  token: string | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -52,6 +55,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const logout = async () => {
     try {
       setAuthError(null);
+      localStorage.removeItem('operator_token');
+      localStorage.removeItem('operator_user');
+      setUser(null);
+      setToken(null);
       const { logOut } = await import('./firebase');
       await logOut();
     } catch (error) {
@@ -59,50 +66,73 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
-      
-      if (firebaseUser) {
-        // Sync user profile to Firestore
-        try {
-          const userDocRef = doc(db, 'users', firebaseUser.uid);
-          const userDoc = await getDoc(userDocRef);
-          
-          const profileData = {
-            email: firebaseUser.email || '',
-            displayName: firebaseUser.displayName || null,
-            photoURL: firebaseUser.photoURL || null,
-            updatedAt: serverTimestamp(),
-          };
+  const loginWithEmail = async (email: string, password: string) => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Login failed');
 
-          if (!userDoc.exists()) {
-            await setDoc(userDocRef, {
-              ...profileData,
-              createdAt: serverTimestamp(),
-            });
-          } else {
-            await setDoc(userDocRef, profileData, { merge: true });
-          }
-        } catch (error) {
-          console.error('Error syncing user profile:', error);
-          if (error && typeof error === 'object' && 'code' in error && error.code === 'permission-denied') {
-             try {
-               handleFirestoreError(error, 'write', `users/${firebaseUser.uid}`);
-             } catch (handledError) {
-               console.error('Detailed security error:', handledError);
-             }
-          }
-        }
+      localStorage.setItem('operator_token', data.token);
+      localStorage.setItem('operator_user', JSON.stringify(data.user));
+      setToken(data.token);
+      setUser(data.user);
+    } catch (error: any) {
+      setAuthError(error.message);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const register = async (email: string, password: string, workspaceName: string) => {
+    try {
+      setLoading(true);
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, workspaceName })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Registration failed');
+
+      localStorage.setItem('operator_token', data.token);
+      localStorage.setItem('operator_user', JSON.stringify(data.user));
+      setToken(data.token);
+      setUser(data.user);
+    } catch (error: any) {
+      setAuthError(error.message);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const [token, setToken] = useState<string | null>(localStorage.getItem('operator_token'));
+
+  useEffect(() => {
+    const savedUser = localStorage.getItem('operator_user');
+    if (savedUser) {
+      setUser(JSON.parse(savedUser));
+      setLoading(false);
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      // Keep Firebase user for backward compatibility or if using Google login
+      if (firebaseUser && !token) {
+        setUser(firebaseUser as any);
       }
-      
       setLoading(false);
     });
     return unsubscribe;
-  }, []);
+  }, [token]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, loginWithEmail, register, token }}>
       {children}
       {authError && (
         <div className="fixed bottom-4 right-4 z-[9999] animate-in fade-in slide-in-from-bottom-2">

@@ -1,121 +1,166 @@
 import axios from 'axios';
-import NodeCache from 'node-cache';
-import { adminDb } from '../firebase-config.ts';
-import { AlertEngine } from '../alerts/alertEngine.ts';
-import { TestingEngine } from '../testing/testingEngine.ts';
-import { CreativeEngine } from '../intel/creativeEngine.ts';
-
-const cache = new NodeCache({ stdTTL: 60 }); // 60 seconds cache
+import { db } from '../db/index';
+import { campaigns, campaignMetrics, creatives, adAccounts } from '../db/schema';
+import { eq, and } from 'drizzle-orm';
+import { KPIService } from './kpiService';
 
 export class MetaSyncService {
-  /**
-   * Fetches all ads from a specific Meta Ad Account and updates the local database.
-   * Uses batch fetching (fields parameter) to minimize requests.
-   */
-  static async syncAdsForAccount(workspace_id: string, ad_account_id: string, accessToken: string) {
-    const cacheKey = `meta_sync_${ad_account_id}`;
-    
-    if (cache.get(cacheKey)) {
-      console.log(`[MetaSync] ⚡ Skipping sync for ${ad_account_id} - cached (60s)`);
-      return { status: 'cached' };
-    }
-
-    console.log(`[MetaSync] 🔄 Starting sync for Ad Account: ${ad_account_id}`);
+  static async syncAdsForAccount(workspaceId: string, adAccountId: string, accessToken: string) {
+    console.log(`[MetaSync] 🔄 Starting full sync for ${adAccountId} in workspace ${workspaceId}`);
 
     try {
-      // Step 1: Fetch ads with specific fields from Meta Graph API
-      const fields = 'id,name,status,campaign{id,name},adset{id,name},creative{id,body,image_url,video_data},insights{impressions,spend,clicks,conversions}';
-      
-      const response = await axios.get(`https://graph.facebook.com/v19.0/${ad_account_id}/ads`, {
+      // 1. Fetch Campaigns
+      const campaignsResponse = await axios.get(`https://graph.facebook.com/v21.0/${adAccountId}/campaigns`, {
         params: {
-          fields,
+          fields: 'id,name,status,objective,daily_budget',
           access_token: accessToken,
           limit: 100
         }
       });
 
-      const ads = response.data.data;
+      const fbCampaigns = campaignsResponse.data.data;
 
-      if (!ads || ads.length === 0) {
-        console.log(`[MetaSync] ℹ️ No ads found for account ${ad_account_id}`);
-        return { status: 'empty' };
-      }
+      for (const camp of fbCampaigns) {
+        // Upsert Campaign
+        await db.insert(campaigns).values({
+          id: camp.id,
+          workspaceId,
+          adAccountId,
+          name: camp.name,
+          status: camp.status,
+          objective: camp.objective,
+          platform: 'meta',
+          dailyBudget: camp.daily_budget ? (parseFloat(camp.daily_budget) / 100).toString() : '0' // Meta budget is in cents usually, but API might return string
+        }).onConflictDoUpdate({
+          target: campaigns.id,
+          set: {
+            name: camp.name,
+            status: camp.status,
+            objective: camp.objective,
+            dailyBudget: camp.daily_budget ? (parseFloat(camp.daily_budget) / 100).toString() : '0'
+          }
+        });
 
-      // Step 2: Update metrics in Database
-      for (const ad of ads) {
-        const insights = ad.insights?.data?.[0] || {};
-        const adRef = adminDb.collection('workspaces').doc(workspace_id).collection('ads').doc(ad.id);
-        
-        // Fetch existing metrics for Alert Engine
-        const existingDoc = await adRef.get();
-        const previousMetrics = existingDoc.exists ? existingDoc.data()?.metrics : null;
+        // 2. Fetch Insights for Campaign
+        const insightsResponse = await axios.get(`https://graph.facebook.com/v21.0/${camp.id}/insights`, {
+          params: {
+            fields: 'impressions,clicks,spend,conversions,purchase_roas,action_values,reach,frequency',
+            access_token: accessToken,
+            date_preset: 'last_30d'
+          }
+        });
 
-        const currentMetrics = {
-          spend: parseFloat(insights.spend || 0),
+        const insights = insightsResponse.data.data?.[0] || {};
+        const purchaseValue = this.extractPurchaseValue(insights.action_values);
+
+        const calculatedMetrics = KPIService.calculateMetrics(
+          parseFloat(insights.spend || 0),
+          parseInt(insights.impressions || 0),
+          parseInt(insights.clicks || 0),
+          this.extractConversions(insights.conversions),
+          purchaseValue
+        );
+
+        // Store Metrics
+        await db.insert(campaignMetrics).values({
+          campaignId: camp.id,
+          workspaceId,
+          date: new Date(), // Using current date for the sync point
           impressions: parseInt(insights.impressions || 0),
           clicks: parseInt(insights.clicks || 0),
-          updated_at: new Date().toISOString()
-        };
-
-        // Run Alert Engine
-        if (previousMetrics) {
-          await AlertEngine.checkPerformance(workspace_id, ad.campaign?.id, currentMetrics, previousMetrics);
-        }
-        
-        await adRef.set({
-          meta_id: ad.id,
-          meta_data: {
-            name: ad.name,
-            status: ad.status,
-            campaign_id: ad.campaign?.id,
-            campaign_name: ad.campaign?.name,
-            adset_id: ad.adset?.id,
-            adset_name: ad.adset?.name,
-          },
-          metrics: currentMetrics,
-          old_metrics: previousMetrics // Store for historical reference if needed
-        }, { merge: true });
+          spend: (insights.spend || '0').toString(),
+          conversions: this.extractConversions(insights.conversions),
+          purchaseValue: purchaseValue.toString(),
+          ctr: calculatedMetrics.ctr.toString(),
+          cpc: calculatedMetrics.cpc.toString(),
+          cpa: calculatedMetrics.cpa.toString(),
+          roas: calculatedMetrics.roas.toString(),
+          reach: parseInt(insights.reach || 0),
+          frequency: (insights.frequency || '1').toString()
+        });
       }
 
-      cache.set(cacheKey, true);
-      console.log(`[MetaSync] ✅ Synced ${ads.length} ads for account ${ad_account_id}`);
-      
-      // Run A/B Testing Engine after sync
-      await TestingEngine.runAutomatedTests(workspace_id);
-      
-      // Run Creative Intelligence Engine
-      await CreativeEngine.runIntelligenceCycle(workspace_id);
+      // 3. Fetch Creatives
+      const adsResponse = await axios.get(`https://graph.facebook.com/v21.0/${adAccountId}/ads`, {
+        params: {
+          fields: 'id,name,creative{id,body,image_url,video_id}',
+          access_token: accessToken,
+          limit: 100
+        }
+      });
 
-      return { status: 'success', count: ads.length };
+      const ads = adsResponse.data.data;
+      for (const ad of ads) {
+        if (ad.creative) {
+          await db.insert(creatives).values({
+            id: ad.creative.id,
+            workspaceId,
+            adAccountId,
+            name: ad.name,
+            imageUrl: ad.creative.image_url || '',
+            bodyText: ad.creative.body || '',
+            creativeScore: 0,
+            fatigueScore: 0
+          }).onConflictDoUpdate({
+            target: creatives.id,
+            set: {
+              name: ad.name,
+              imageUrl: ad.creative.image_url || '',
+              bodyText: ad.creative.body || ''
+            }
+          });
+        }
+      }
+
+      // Update last synced
+      await db.update(adAccounts)
+        .set({ lastSyncedAt: new Date() })
+        .where(eq(adAccounts.id, adAccountId));
+
+      console.log(`[MetaSync] ✅ Sync complete for ${adAccountId}`);
+      return { success: true };
 
     } catch (error: any) {
-      console.error(`[MetaSync] ❌ Error syncing Meta Ads:`, error.response?.data || error.message);
+      console.error(`[MetaSync] ❌ Sync failed:`, error.response?.data || error.message);
       throw error;
     }
+  }
+
+  private static extractPurchaseValue(actionValues: any[]): number {
+    if (!actionValues) return 0;
+    const purchaseValue = actionValues.find((v: any) => v.action_type === 'purchase' || v.action_type === 'offsite_conversion.fb_pixel_purchase');
+    return purchaseValue ? parseFloat(purchaseValue.value) : 0;
+  }
+
+  private static extractConversions(conversions: any): number {
+    if (!conversions) return 0;
+    if (typeof conversions === 'number') return conversions;
+    if (Array.isArray(conversions)) {
+      const purchaseAction = conversions.find((c: any) => c.action_type === 'purchase' || c.action_type === 'offsite_conversion.fb_pixel_purchase');
+      return purchaseAction ? parseInt(purchaseAction.value) : 0;
+    }
+    return 0;
   }
 
   /**
    * Identifies all active workspace ad accounts that need syncing.
    */
   static async getWorkspacesToSync() {
-    console.log('[MetaSync] 🔍 Fetching workspaces to sync...');
+    console.log('[MetaSync] 🔍 Fetching all accounts for sync from Postgres...');
     try {
-      const workspacesRef = adminDb.collection('workspaces');
-      const snapshot = await workspacesRef.where('integrations.meta.active', '==', true).get();
-      console.log(`[MetaSync] found ${snapshot.size} active workspaces`);
+      const accounts = await db.select()
+        .from(adAccounts)
+        .where(eq(adAccounts.status, 'ACTIVE'));
       
-      return snapshot.docs.map(doc => ({
-        id: doc.id,
-        meta_account_id: doc.data().integrations?.meta?.ad_account_id,
-        access_token: doc.data().integrations?.meta?.access_token
+      return accounts.map(acc => ({
+        id: acc.workspaceId,
+        meta_account_id: acc.id,
+        access_token: acc.accessToken
       }));
     } catch (err: any) {
-      if (err.code === 5 || err.message?.includes('NOT_FOUND')) {
-        console.warn('[MetaSync] ⚠️ Workspaces collection not found or database not initialized. Skipping sync.');
-        return [];
-      }
-      console.error('[MetaSync] ❌ Failed to fetch workspaces:', err.message);
-      throw err;
+      console.error('[MetaSync] ❌ Failed to fetch accounts for sync:', err.message);
+      return [];
     }
   }
 }
+

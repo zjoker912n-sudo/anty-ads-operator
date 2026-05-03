@@ -22,6 +22,7 @@ import { PageUnderConstruction } from './components/PageUnderConstruction';
 import { useAuth, AuthProvider } from './lib/auth';
 import LandingPage from './pages/LandingPage';
 import PricingPage from './pages/Pricing';
+import { AuthPage } from './pages/Auth';
 
 function AppRouter() {
   const { user, loading } = useAuth();
@@ -32,6 +33,7 @@ function AppRouter() {
       element: !user ? <LandingPage /> : <Layout />,
       children: [
         { index: true, element: <Navigate to="/dashboard" replace /> },
+        { path: "auth", element: <AuthPage /> },
         { path: "pricing", element: <PricingPage /> },
         { path: "dashboard", element: <Dashboard /> },
         { path: "admin", element: <Admin /> },

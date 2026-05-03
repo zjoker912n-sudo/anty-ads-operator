@@ -39,7 +39,7 @@ export default function LandingPage() {
           <a href="#results" className="hover:text-white transition-colors">Success Metrics</a>
         </div>
         <button 
-          onClick={login}
+          onClick={() => window.location.href = '/auth'}
           className="bg-white text-black px-6 py-2.5 rounded-full text-sm font-bold hover:bg-gray-200 transition-all active:scale-95 shadow-xl"
         >
           Login / Access Terminal
@@ -74,7 +74,7 @@ export default function LandingPage() {
               Start Free Performance Audit <ArrowRight className="w-5 h-5" />
             </button>
             <button 
-              onClick={login}
+              onClick={() => window.location.href = '/auth'}
               className="w-full sm:w-auto border border-white/10 bg-white/5 backdrop-blur-md px-10 py-5 rounded-2xl text-lg font-black hover:bg-white/10 transition-all flex items-center justify-center gap-3 active:scale-[0.98]"
             >
               Access Terminal
