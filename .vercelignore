@@ -1,0 +1,8 @@
+api/
+services/
+queue/
+scheduler/
+db/
+intel/
+auth/
+# Keep src/ and other frontend folders
