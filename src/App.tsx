@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
+import { Analytics } from '@vercel/analytics/react';
 import { FilterProvider } from './lib/FilterContext';
 import { StatePersistenceProvider } from './lib/StatePersistenceContext';
 import { Layout } from './components/Layout';
@@ -79,6 +80,7 @@ export default function App() {
   return (
     <AuthProvider>
       <AppRouter />
+      <Analytics />
     </AuthProvider>
   );
 }
